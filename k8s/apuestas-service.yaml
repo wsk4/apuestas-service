@@ -9,6 +9,7 @@ spec:
   selector:
     app: apuestas-service
   ports:
-    - port: 8005
+    - name: http
+      port: 8005
       targetPort: 8005
       protocol: TCP
