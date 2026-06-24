@@ -15,7 +15,7 @@ import json
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -73,12 +73,18 @@ _INICIO = time.time()
 _READY_MAX_MEM_PERCENT = float(os.getenv("READY_MAX_MEM_PERCENT", "90"))
 
 
-@app.get("/livez", tags=["health"])
-def liveness():
-    """
-    Liveness probe — el proceso está vivo.No depende de la BD: si falla, Kubernetes reinicia el pod."""
+
+@app.get(
+    "/livez", 
+    tags=["health"],
+    status_code=status.HTTP_200_OK,
+    summary="Liveness Probe",
+    description="Verifica si el proceso principal de la aplicación está vivo y respondiendo. No realiza consultas a dependencias externas."
+)
+async def liveness():
     return {
-        "status": "ok","uptime_segundos": round(time.time() - _INICIO, 1),
+        "status": "healthy",
+        "uptime_seconds": round(time.time() - _INICIO, 1)
     }
 
 

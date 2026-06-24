@@ -72,6 +72,7 @@ jobs:
 
           kubectl apply -f k8s/apuestas-deployment.yaml
           kubectl apply -f k8s/apuestas-service.yaml
+          kubectl apply -f k8s/apuestas-hpa.yaml
 
       - name: 8. Esperar rollout y mostrar resultado
         run: |
