@@ -60,11 +60,11 @@ spec:
           # ── Recursos (obligatorios para HPA por CPU) ───────────────────────
           resources:
             requests:
-              cpu: "100m"
-              memory: "128Mi"
+              cpu: "50m"
+              memory: "64Mi"
             limits:
-              cpu: "500m"
-              memory: "256Mi"
+              cpu: "300m"
+              memory: "128Mi"
 
           # ── Health probes (4.1) ────────────────────────────────────────────
           readinessProbe:
