@@ -3,3 +3,6 @@ __pycache__/
 .venv/
 venv/
 .env
+# Secretos de Kubernetes (nunca commitear con valores reales)
+k8s/casino-secrets.yaml
+k8s/*-secrets.yaml

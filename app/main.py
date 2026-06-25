@@ -15,13 +15,16 @@ import json
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from .auth import requiere_admin, usuario_actual
 from .db import conexion, dict_cursor, esperar_bd, init_schema, sembrar_eventos
 from .simulacion import simular_partido
+
+import time
+import psutil
 
 SELECCIONES = {"local", "empate", "visita"}
 CUOTA_COL = {"local": "cuota_local", "empate": "cuota_empate", "visita": "cuota_visita"}
@@ -65,6 +68,65 @@ class ResolverRequest(BaseModel):
 #   - liveness: ¿el proceso está vivo? (respuesta simple).
 #   - readiness: ¿está listo para recibir tráfico? Debe verificar la BD.
 # Luego configurar livenessProbe/readinessProbe en el Deployment de EKS.
+
+_INICIO = time.time()
+_READY_MAX_MEM_PERCENT = float(os.getenv("READY_MAX_MEM_PERCENT", "90"))
+
+
+
+@app.get(
+    "/livez", 
+    tags=["health"],
+    status_code=status.HTTP_200_OK,
+    summary="Liveness Probe",
+    description="Verifica si el proceso principal de la aplicación está vivo y respondiendo. No realiza consultas a dependencias externas."
+)
+async def liveness():
+    return {
+        "status": "healthy",
+        "uptime_seconds": round(time.time() - _INICIO, 1)
+    }
+
+
+@app.get("/readyz", tags=["health"])
+def readiness():
+    """
+    Readiness probe — verifica BD + memoria del pod.
+    200 si está lista, 503 si no: Kubernetes saca el pod del balanceo sin reiniciarlo.
+    """
+    cpu = psutil.cpu_percent(interval=0.1)
+    memoria = psutil.virtual_memory().percent
+
+    # 1) Verificar PostgreSQL (requisito principal del enunciado)
+    try:
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ready": False,
+                "motivo": f"BD no disponible: {exc}",
+                "cpu_%": cpu,
+                "memoria_%": memoria,
+            },
+        )
+
+    # 2) Verificar recursos del pod
+    if memoria > _READY_MAX_MEM_PERCENT:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ready": False,
+                "motivo": "memoria alta",
+                "cpu_%": cpu,
+                "memoria_%": memoria,
+                "umbral_%": _READY_MAX_MEM_PERCENT,
+            },
+        )
+
+    return {"ready": True, "cpu_%": cpu, "memoria_%": memoria}
 
 
 @app.get("/api/apuestas/eventos")

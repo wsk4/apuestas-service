@@ -1,0 +1,82 @@
+name: Desplegar apuestas-service en EKS (CI/CD)
+
+on:
+  push:
+    branches: [ deploy ]
+  workflow_dispatch:        # también se lanza a mano desde la pestaña Actions
+
+env:
+  AWS_REGION:    ${{ secrets.AWS_REGION }}
+  CLUSTER_NAME:  ${{ secrets.EKS_CLUSTER }}
+  ECR_REPO:      ${{ secrets.ECR_REPOSITORY }}
+  IMAGE_VERSION: "1.0.0"   # ← actualizar en cada release semántico
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Descargar el código del repo
+        uses: actions/checkout@v4
+
+      - name: 2. Configurar credenciales de AWS (temporales del lab)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: 3. Login en Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: 4. Construir y subir imagen con 3 tags (el repo ya existe en ECR)
+        env:
+          REGISTRY:  ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_BASE="$REGISTRY/$ECR_REPO"
+
+          docker build \
+            -t "$IMAGE_BASE:v$IMAGE_VERSION" \
+            -t "$IMAGE_BASE:latest" \
+            -t "$IMAGE_BASE:$IMAGE_TAG" \
+            .
+
+          docker push "$IMAGE_BASE:v$IMAGE_VERSION"
+          docker push "$IMAGE_BASE:latest"
+          docker push "$IMAGE_BASE:$IMAGE_TAG"
+
+      - name: 5. Instalar kubectl en el runner
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/kubectl
+
+      - name: 6. Conectar kubectl al clúster
+        run: aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+
+      - name: 7. Desplegar en EKS
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+          # Sustituir placeholders del manifiesto con valores reales
+          sed -i \
+            "s|<AWS_ACCOUNT_ID>|$ACCOUNT_ID|g; \
+             s|<REGION>|$AWS_REGION|g; \
+             s|:latest|:$IMAGE_TAG|g" \
+            k8s/apuestas-deployment.yaml
+
+          kubectl apply -f k8s/apuestas-deployment.yaml
+          kubectl apply -f k8s/apuestas-service.yaml
+          kubectl apply -f k8s/apuestas-hpa.yaml
+
+      - name: 8. Esperar rollout y mostrar resultado
+        run: |
+          kubectl rollout status deployment/apuestas-service --timeout=180s
+          kubectl get pods -o wide
+          echo "Servicio ClusterIP (tráfico interno):"
+          kubectl get svc apuestas-service

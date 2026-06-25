@@ -1,0 +1,40 @@
+# Control de versiones
+.git
+.gitignore
+
+# Variables de entorno (nunca al contexto de build)
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Tests y cobertura
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editores e IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker (no recursivo)
+Dockerfile
+.dockerignore
+
+# Docs
+README.md
